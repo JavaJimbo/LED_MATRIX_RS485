@@ -27,9 +27,7 @@
 #define PANELS_ACROSS 2
 #define PANELS_STACKED 2 
 #define NUMPANELS (PANELS_ACROSS * PANELS_STACKED)
-#define PANEL32X32 // $$$$
-#define DUALMATRIX
-
+#define PANEL32X32
 
 #define UART_STANDBY 0
 #define UART_INCOMING 1
@@ -55,23 +53,16 @@
 #define MAXROW (PANELS_STACKED*32)  
 #else
 #define PANELROWS 16
-#define COLORDEPTH 3 // was 6
+#define COLORDEPTH 8
 #define MAXLINE 8
-#define TIMER_ROLLOVER 2000
+#define TIMER_ROLLOVER 250
 #define MAXCOL (PANELS_ACROSS*32)
 #define MAXROW (PANELS_STACKED*16)
 #endif
  
 // NUMWRITES is the number of words written to the output port 
-// per each color plane for each line on the matrix
-// NUMWRITES = Total columns * total rows / number of rows per panel
-// The number of rows per panel = LINES * 2, for either 16x32 or 32x32 panels:
-#ifdef DUALMATRIX
-#define NUMWRITES (MAXCOL * MAXROW / (MAXLINE * 4))        
-#else
-#define NUMWRITES (MAXCOL * MAXROW / (MAXLINE * 2))        
-#endif
-
+// per each color plane for each line on the matrix = Total columns
+#define NUMWRITES MAXCOL
 
 #define PANELCOLS 32
 #define PANELSIZE (PANELROWS*PANELCOLS*NUMCHANNELS)
@@ -107,25 +98,30 @@
 
 #define XBEE_SLEEP PORTBbits.RB15
 
+//#define RED_LSB 0b00001000 // (0x01<<(8-COLORDEPTH))
 #define RED_LSB (0x01<<(8-COLORDEPTH))
-#define GREEN_LSB (RED_LSB*256)
-#define BLUE_LSB  (RED_LSB*65536)
+#define GREEN_LSB (RED_LSB << 8)
+#define BLUE_LSB  (RED_LSB << 16)
 
 #define OEbit 0x0020
 #define LATbit 0x0040
 
 #ifdef REV3BOARD
-#define OE_HIGH_LATCH_LOW 0x2000
-#define OE_LOW_LATCH_HIGH 0x6000
+#define LATCH_LOW 0x0000
+#define LATCH_HIGH 0x6000
+//#define LATCH_LOW 0x2000
+//#define LATCH_HIGH 0x6000
+#define OE_OFF() PORTClearBits(IOPORT_C, BIT_13)
+#define OE_ON() PORTCSetBits(IOPORT_C, BIT_13)
 #endif
 
 #ifdef REV2BOARD
-#define OE_HIGH_LATCH_LOW 0x80  // OE=1, LATCH=0
-#define OE_LOW_LATCH_HIGH 0x40  // OE=0, LATCH=1
+#define LATCH_LOW 0x80  // OE=1, LATCH=0
+#define LATCH_HIGH 0x40  // OE=0, LATCH=1
 #endif
 
-//#define OE_HIGH_LATCH_LOW 0xC0  // 0x40
-//#define OE_LOW_LATCH_HIGH 0x80  
+//#define LATCH_LOW 0xC0  // 0x40
+//#define LATCH_HIGH 0x80  
 //#endif
 
 // PIN DEFINITIONS FOR REV 2 LED MATRIX CONTROLLER
@@ -162,22 +158,6 @@
 #define M2G2bit 0x0800
 #endif
 
-/*
-#define R1bit 0x0001
-#define B1bit 0x0002
-#define G1bit 0x0004
-#define R2bit 0x0008
-#define B2bit 0x0010
-#define G2bit 0x0020
-
-#define M2R1bit 0x0100
-#define M2B1bit 0x0200
-#define M2G1bit 0x0400
-#define M2R2bit 0x0800
-#define M2B2bit 0x1000
-#define M2G2bit 0x2000
-*/
-
 #define EVEN_MASK ~(R1bit | B1bit | G1bit | R2bit | B2bit | G2bit)
 #define ODD_MASK  ~(M2R1bit | M2B1bit | M2G1bit | M2R2bit | M2B2bit | M2G2bit)
 
@@ -191,45 +171,25 @@
 
 //#define DARKEN //& 0x7F7F7F
 
-#define MAGENTA 0x8000A0
-#define PURPLE 0xB00050
-#define CYAN 0x405000
-#define LIME 0x00A060
-#define YELLOW 0x007090
+
+#define MAGENTA 0x1000FF
+#define PURPLE 0x7F0070
+#define CYAN 0x705000
+#define LIME 0x00FF40
+#define YELLOW 0x0070FE
 #define ORANGE 0x0020FF
 #define RED 0x0000FF
 #define GREEN 0x00FF00
 #define BLUE 0xFF0000
-#define PINK 0x102080
-#define LAVENDER 0x400030
-#define TURQUOISE 0x30A000
-#define WHITE 0x808080
+#define PINK 0x10207F
+#define LAVENDER 0xF00030
+#define TURQUOISE 0x70FF00
+#define WHITE 0xFFFFFF // was 808080
 #define GRAY 0x505050
 #define DARKGRAY 0x202020
 #define BLACK 0
-
-/*
-#define MAGENTA 0xA00080
-#define PURPLE 0x5000B0
-#define CYAN 0x005040
-#define LIME 0x60A000
-#define YELLOW 0x907000
-#define ORANGE 0xFF2000
-#define RED 0xFF0000
-#define GREEN 0x00FF00
-#define BLUE 0x0000FF
-#define PINK 0x802010
-#define LAVENDER 0x300040
-#define TURQUOISE 0x00A030
-#define WHITE 0x808080
-#define GRAY 0x505050
-#define DARKGRAY 0x202020
-#define BLACK 0
-*/
-
 
 #define MAXCOLOR 16
-
 
 #define MAXRANDOM (RAND_MAX+1)
 #define true	TRUE
@@ -249,13 +209,5 @@
 #define OEpin   PORTDbits.RD5
 #endif
 
-#define RIGHT 1
-#define LEFT  2
-#define UP    3
-#define DOWN  4
-#define UPRIGHT 5
-#define UPLEFT 6
-#define DOWNRIGHT 7
-#define DOWNLEFT 8
 
 #endif

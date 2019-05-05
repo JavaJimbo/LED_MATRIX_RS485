@@ -7,6 +7,7 @@
       <itemPath>../../../../Compiler.h</itemPath>
       <itemPath>../../../../Defs.h</itemPath>
       <itemPath>../../../../Delay.h</itemPath>
+      <itemPath>../../../../AT45DB641.h</itemPath>
     </logicalFolder>
     <logicalFolder name="LinkerScript"
                    displayName="Linker Files"
@@ -18,6 +19,7 @@
       <itemPath>../../../../main.c</itemPath>
       <itemPath>../../../../CRC Byte Check.c</itemPath>
       <itemPath>../../../../DelayPIC32.c</itemPath>
+      <itemPath>../../../../AT45DB641.c</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
                    displayName="Important Files"

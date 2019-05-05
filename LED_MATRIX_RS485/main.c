@@ -1,14 +1,16 @@
-
 /*********************************************************************************************
- * LED_MATRIX_RS485
+ * LED_MATRIX_RS485 WORK
  * MAIN file for LED Controller RS485 Version
  * 4-22-19: Works great with both 16x32 and 32x32 panels.
  * 4-28-19: SYS_FREQ 80000000, Color depth = 7 but MSB = 0 to prevent ghosting, timer rollover = 250
  *          Also, general cleanup - eliminated unused methods.
- *          Added blanking bit, Increased color depth to 8 bits
+ * 5-4-19: 32x32 code makes sense now.
+ * 5-5-19: Fully debugged matrix math for 32x32 and 16x32 panels.
+ *          Added pot reading capability for color balancing.
+ *          Atmel methods are up and running for multiple ICs.
  *********************************************************************************************/
 #define SYS_FREQ 80000000
-#define BOARD_ID (6 * 16)  // $$$$
+#define BOARD_ID (2 * 16)  // $$$$
 #define ALL_BOARDS '0'
 
 #include "Defs.h"
@@ -17,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include "AT45DB641.h"
 
 #pragma config UPLLEN   = ON            // USB PLL Enabled
 #pragma config FPLLMUL  = MUL_20        // PLL Multiplier
@@ -66,7 +69,7 @@ unsigned short RS485TxLength;
 unsigned short RS485RxLength;
 unsigned char RS485BufferFull = false;
 
-#define MAXPOTS 4
+#define MAXPOTS 3
 
 unsigned char DmaIntFlag = false;
 unsigned char command = 0;
@@ -79,7 +82,6 @@ unsigned short line = 0;
 unsigned short dataOffset = 0;
 unsigned char colorPlane = 0;
 unsigned short latchHigh[1] = {LATCH_HIGH};
-
 unsigned long Delaymultiplier = TIMER_ROLLOVER;
 
 unsigned long redAdjust, greenAdjust, blueAdjust, brightAdjust;
@@ -89,7 +91,10 @@ unsigned long ConvertColorToLong (unsigned char byteColor);
 void InitializeDMA();
 
 
-unsigned long matrix[MAXROW][MAXCOL];
+unsigned long Timer1MilliSeconds = 0;
+unsigned char Timer1Flag = false;
+
+unsigned long matrix[MAXROW][MATRIX_WIDTH];
 unsigned long panelData[NUMPANELS][PANELROWS][PANELCOLS];
 unsigned char panelUpdateBytes[PANELSIZE];
 long HOSTuartActualBaudrate, RS485uartActualBaudrate;
@@ -113,6 +118,7 @@ void ConfigAd(void);
 unsigned long getRGBColor(unsigned short crossfade, unsigned short potVal);
 unsigned char updateOutputPanel(unsigned char panelNumber);
 unsigned char updateOutputPanelPtr(unsigned char panelNumber, unsigned char *ptrPanelData);
+unsigned char updateOutputMatrix();
 unsigned char uncompressData(unsigned char *ptrCompressedData, unsigned char *ptrPanelData);
 short packetSize = 0;
 unsigned short packetCounter = 0;
@@ -154,8 +160,38 @@ void initPanels(unsigned long color)
     for (i = 0; i < NUMPANELS; i++) updateOutputPanel(i);        
 }
 
-#define BARWIDTH (MAXCOL/MAXCOLOR)
+#ifdef PANEL32X32
+#define BARWIDTH 4
+void panelColorBars(void) 
+{
+    unsigned short i, row, col;
+    unsigned char colorIndex = 0, k = BARWIDTH;
+    unsigned long color;
 
+    i = 0;
+    do {        
+        for (col = 0; col < PANELCOLS; col++) {
+            for (row = 0; row < PANELROWS; row++) 
+            {
+                if (colorIndex < MAXCOLOR) 
+                {
+                    color = colorWheel[colorIndex];
+                    panelData[i][row][col] = color;
+                }
+            }
+            if (k)k--;
+            if (!k) 
+            {
+                colorIndex++;
+                k = BARWIDTH;
+            }
+        }
+        i++;
+    } while (i < 2);
+    for (i = 0; i < NUMPANELS; i++) updateOutputPanel(i);
+}
+#else
+#define BARWIDTH 4
 void panelColorBars(void) 
 {
     unsigned short i, row, col;
@@ -181,10 +217,60 @@ void panelColorBars(void)
             }
         }
         i = i + 2;
-    } while (i < (PANELS_ACROSS * 2));
+    } while (i <= 2);
     for (i = 0; i < NUMPANELS; i++) updateOutputPanel(i);
 }
+#endif
 
+#ifdef PANEL32X32
+void matrixColorBars()
+{
+    short row, col, colorIndex, numColumnsEachColor;
+    unsigned long color;
+    
+    colorIndex = 0;
+    for (col = 0; col < MATRIX_WIDTH; col++)
+    {
+        if (colorIndex < MAXCOLOR) color = colorWheel[colorIndex];
+        else color = BLACK;           
+        for (row = 0; row < MATRIX_HEIGHT; row++)
+        {        
+            matrix[row][col] = color;
+        }
+        numColumnsEachColor++;
+        if (numColumnsEachColor >= BARWIDTH)
+        {
+            numColumnsEachColor = 0;
+            colorIndex++;
+        }
+    }
+    updateOutputMatrix();
+}
+#else
+void matrixColorBars()
+{
+    short row, col, colorIndex, numColumnsEachColor;
+    unsigned long color;
+    
+    colorIndex = 0;
+    for (col = 0; col < MAXCOL; col++)
+    {
+        if (colorIndex < MAXCOLOR) color = colorWheel[colorIndex];
+        else color = BLACK;           
+        for (row = 0; row < MAXROW; row++)
+        {        
+            matrix[row][col] = color;
+        }
+        numColumnsEachColor++;
+        if (numColumnsEachColor >= 4)
+        {
+            numColumnsEachColor = 0;
+            colorIndex++;
+        }
+    }
+    updateOutputMatrix();
+}
+#endif
 
 void ClearRxBuffer()
 {
@@ -193,34 +279,104 @@ void ClearRxBuffer()
 }
 
 int main(void) {
-    unsigned long i;    
+    unsigned long i, j;
     int dataLength;
     unsigned char command, subCommand;
     unsigned char CRCcheckOK = false;
     unsigned char PanelComplete = false;
     short PanelNumber, BoardNumber;
-    short row, column, colorValue;
+    short row, col, colorValue;
+    unsigned long red1 = 128, blue1 = 128, green1 = 128, color1 = 128, red2 = 128, blue2 = 128, green2 = 128, color2 = 128;
+    unsigned char colorMode = 0;
+    unsigned short TestWriteInt = 0;
+    unsigned short TestReadInt = 0;
+    unsigned char TestDataByte = 0xA9;
+    unsigned char AtmelChipNumber = 4, PageNumber = 0, BufferNumber = 1;
+    unsigned char BufferWriteData[PAGESIZE], BufferReadData[PAGESIZE];
+    unsigned short counter = 0;
+
     
     BoardAlias = (BOARD_ID / 16) + '0';
     
-    for (i = 0; i < (NUMWRITES * (COLORDEPTH+1) * MAXLINE); i++) matrixOutData[i] = (unsigned short) BLACK;
-    // panelColorBars();
+    for (i = 0; i < (NUMWRITES * COLORDEPTH * MAXLINE); i++) matrixOutData[i] = (unsigned short) BLACK;
     initPanels(BLACK);
     InitializeSystem();
     
-    DisableRS485_TX();
-
-    // TESTupdateOutputPanel(0);
-    // ColorBars();
+    DelayMs(100);
     
-    DelayMs(100);    
+    printf("\r\r\r#2 TESTING ATMEL BOARD #%d", (BOARD_ID/16));        
     
-    //printf("\r\rHost Baud rate: %d", HOSTuartActualBaudrate);
-    //printf("\rRS485 baud rate: %d", RS485uartActualBaudrate);    
-    printf("\rBoard #%d Start up...", (BOARD_ID/16));    
-
+    printf("\rInitializing SPI #%d", ATMEL_SPI_CHANNEL);    
+    initAtmelSPI();
+    ATMEL_WRITE_PROTECT = 1;
+    
+    /*
+    while(counter < 8)
+    {
+        printf("\r\r\rErasing Atmel #%d page %d", AtmelChipNumber, PageNumber);
+        ErasePage(AtmelChipNumber, PageNumber);
+    
+        for (i = 0; i < PAGESIZE; i++) BufferWriteData[i] = TestDataByte++;  
+        printf("\rWriting to Atmel buffer #%d:", BufferNumber);
+        WriteAtmelPageBuffer(AtmelChipNumber, BufferNumber, BufferWriteData);
+    
+        printf("\rTransferring RAM to flash page #%d:", PageNumber);
+        ProgramFLASH(AtmelChipNumber, BufferNumber, PageNumber);
+    
+        for (i = 0; i < PAGESIZE; i++) BufferReadData[i] = 0;
+    
+        printf("\rTransferring flash page #%d back to RAM:", PageNumber);
+        TransferFLASH(AtmelChipNumber, BufferNumber, PageNumber);     
+        
+        printf("\r#%d: Reading Atmel buffer: ", counter);
+        ReadAtmelPageBuffer(AtmelChipNumber, BufferNumber, BufferReadData);            
+        for (i = 0; i < PAGESIZE; i++)
+        {       
+        
+            if ((i % 16) == 0) printf("\r%X, ", BufferReadData[i]);
+            else printf("%X, ", BufferReadData[i]);
+        }     
+        counter++;
+    }
+    */
+    
     while(1) 
     {                
+        /*
+        if (Timer1MilliSeconds >= 100)
+        {
+            Timer1MilliSeconds = 0;          
+            if (colorMode == 1)
+            {
+                red1 = arrPots[0];
+                green1 = arrPots[1];
+                blue1 = arrPots[2];
+            }
+            else if (colorMode == 2)
+            {
+                red2 = arrPots[0];
+                green2 = arrPots[1];
+                blue2 = arrPots[2];
+           }            
+            
+            if (colorMode == 1) printf("\rColor #1: Red: %d, Green: %d, Blue: %d", red1, green1, blue1);
+            else if (colorMode == 2) printf("\rColor #2: Red: %d, Green: %d, Blue: %d", red2, green2, blue2);
+            
+            color1 = ((blue1 << 16) & 0xFF0000) | ((green1 << 8) & 0x00FF00) | (red1 & 0x0000FF);
+            color2 = ((blue2 << 16) & 0xFF0000) | ((green2 << 8) & 0x00FF00) | (red2 & 0x0000FF);
+            
+            for (col = 0; col < MAXCOL; col++)
+                for (row = 0; row < MAXROW; row++)
+                {
+                    if ((row >= MAXROW/2) && (col < MAXCOL/2))
+                        matrix[row][col] = color1;
+                    else matrix[row][col] = color2;
+                }
+            updateOutputMatrix();
+            mAD1IntEnable(INT_ENABLED);          
+        }             
+        */
+        
         if (DmaIntFlag)
         {
             DmaIntFlag = false;  
@@ -233,12 +389,13 @@ int main(void) {
                     
                 command = RS485RxData[1]; // $$$$
                 subCommand = RS485RxData[0] & 0xF0;
-                PanelComplete = RS485RxData[0] & 0x08;
+                
                 PanelNumber = RS485RxData[0] & 0x07;
                 BoardNumber = (RS485RxData[0] / 16);
                 
                 if (CRCcheckOK)
                 {
+                    /*
                     #ifdef PANEL32X32
                         if (subCommand == BOARD_ID) 
                         {
@@ -253,6 +410,7 @@ int main(void) {
                         if (subCommand == BOARD_ID) printf("\r>#%d: Board: %d, Panel: %d", packetCounter++, BoardNumber, PanelNumber);
                         else printf("\r#%d: Board: %d, Panel: %d", packetCounter++, BoardNumber, PanelNumber);
                     #endif
+                    */
                 }                
                 else if ((RS485RxData[0] == BoardAlias || RS485RxData[0] == ALL_BOARDS) && command != 0)
                 {                    
@@ -263,7 +421,8 @@ int main(void) {
                     else if (command == 'C')
                     {
                         printf("\rColor bars");
-                        panelColorBars(); 
+                        matrixColorBars();
+                        // panelColorBars(); 
                     }
                     else if (command == ' ')
                     {
@@ -275,9 +434,9 @@ int main(void) {
                         for (row = 0; row < PANELROWS; row++)
                         {
                             printf("\rROW %d: ", row);
-                            for (column = 0; column < PANELCOLS; column++)    
+                            for (col = 0; col < PANELCOLS; col++)    
                             {
-                                colorValue = panelData[3][row][column];
+                                colorValue = panelData[3][row][col];
                                 printf("%d ", colorValue);
                             }
                         }
@@ -287,12 +446,24 @@ int main(void) {
             }    
             else printf ("\rERROR: No data!");            
         }        
-        
+
         if (HOSTRxLength) 
         {
-            printf("\rRECEIVED: %s", HOSTRxBuffer);
+            printf("\rRS232 RECEIVED: %s", HOSTRxBuffer);        
+            /*
+            if (HOSTRxBuffer[0] == '1') 
+            {
+                colorMode = 1;
+            }
+            else if (HOSTRxBuffer[0] == '2') 
+            {
+                colorMode = 2;
+            }
+            else colorMode = 0;             
+            printf("\rColor mode: %d", colorMode);
+            */   
             HOSTRxLength = 0;            
-        }
+        }                
         
         if (RS485RxLength) 
         {
@@ -335,14 +506,13 @@ unsigned long getLongInteger(unsigned char b0, unsigned char b1, unsigned char b
 }
 */
 
-
-/*
-void ConfigAd(void) {
+void ConfigAd(void) 
+{
 
     mPORTBSetPinsAnalogIn(BIT_0);
     mPORTBSetPinsAnalogIn(BIT_1);
     mPORTBSetPinsAnalogIn(BIT_2);
-    mPORTBSetPinsAnalogIn(BIT_3);
+    // mPORTBSetPinsAnalogIn(BIT_3);
 
     // ---- configure and enable the ADC ----
 
@@ -363,7 +533,7 @@ void ConfigAd(void) {
 #define PARAM4    ENABLE_AN0_ANA | ENABLE_AN1_ANA| ENABLE_AN2_ANA | ENABLE_AN3_ANA
 
     // Only scan AN0, AN1, AN2, AN3 for now
-#define PARAM5   SKIP_SCAN_AN4 |SKIP_SCAN_AN5 |SKIP_SCAN_AN6 |SKIP_SCAN_AN7 |\
+#define PARAM5   SKIP_SCAN_AN3 | SKIP_SCAN_AN4 | SKIP_SCAN_AN5 | SKIP_SCAN_AN6 | SKIP_SCAN_AN7 |\
                     SKIP_SCAN_AN8 |SKIP_SCAN_AN9 |SKIP_SCAN_AN10 |\
                       SKIP_SCAN_AN11 | SKIP_SCAN_AN12 |SKIP_SCAN_AN13 |SKIP_SCAN_AN14 |SKIP_SCAN_AN15
 
@@ -381,67 +551,7 @@ void ConfigAd(void) {
     // Enable the ADC
     EnableADC10();
 
-}*/
-
-void __ISR(_ADC_VECTOR, ipl6) AdcHandler(void) {
-    unsigned short offSet;
-    unsigned char i;
-
-    mAD1IntEnable(INT_DISABLED);
-    mAD1ClearIntFlag();
-
-    // Determine which buffer is idle and create an offset
-    offSet = 8 * ((~ReadActiveBufferADC10() & 0x01));
-
-    for (i = 0; i < MAXPOTS; i++)
-        arrPots[i] = (unsigned char) (ReadADC10(offSet + i) / 4); // read the result of channel 0 conversion from the idle buffer
-
 }
-
-void __ISR(_TIMER_23_VECTOR, ipl2) Timer23Handler(void) 
-{
-    static unsigned char line = 0;
-    static unsigned char colorPlane = 0;
-    static unsigned long Delaymultiplier = TIMER_ROLLOVER;
-    static unsigned short dataOffset = 0;
-    static unsigned char testFlag = FALSE;
-
-    mT23ClearIntFlag(); // Clear interrupt flag    
-
-    if (colorPlane == COLORDEPTH) TEST_OUT = 0;
-    else if ((colorPlane % 2) == 0) TEST_OUT = 1;
-    else TEST_OUT = 0;
-    
-    WritePeriod23(Delaymultiplier);
-    PORTD = line;
-#ifdef REV3BOARD
-    LATC = LATCH_LOW;
-#else
-    PORTA = LATCH_LOW;
-#endif
-    DmaChnSetTxfer(DMA_CHANNEL1, &matrixOutData[dataOffset], (void*) &PMDIN, NUMWRITES * 2, 2, 2);
-    DmaChnEnable(DMA_CHANNEL1);
-    DmaChnEnable(DMA_CHANNEL2);    
-    dataOffset = dataOffset + NUMWRITES;
-    Delaymultiplier = Delaymultiplier << 1;
-    colorPlane++;
-    if (colorPlane > COLORDEPTH) 
-    {
-        colorPlane = 0;
-        Delaymultiplier = TIMER_ROLLOVER;
-        line++;
-        if (line >= MAXLINE) 
-        {
-            line = 0;
-            dataOffset = 0;
-        }
-    }
-    else if (colorPlane == COLORDEPTH)
-        Delaymultiplier = TIMER_ROLLOVER;
-}
-
-
-
     
 unsigned short decodePacket(unsigned char *ptrInPacket, unsigned char *ptrData) 
 {
@@ -631,61 +741,64 @@ static void InitializeSystem(void) {
 
 
 void UserInit(void) {
-    PORTSetPinsDigitalOut(IOPORT_E, BIT_0 | BIT_1 | BIT_2 | BIT_3);
+    
 
     // Turn off JTAG so we get the pins back
     mJTAGPortEnable(false);
 
+    // SET UP PORT A
 #ifdef REV3BOARD 
     PORTSetPinsDigitalOut(IOPORT_A, BIT_0);
 #else
     PORTSetPinsDigitalOut(IOPORT_A, BIT_6 | BIT_7); // `B
 #endif
-
+    
+    // SET UP PORT B
+    PORTSetPinsDigitalOut(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_8 | BIT_12 | BIT_15);    
+    PORTSetBits(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_4 | BIT_8 | BIT_12);
+    RS485_CTRL = 0;
+    ATMEL_WRITE_PROTECT = 1; // Allow Atmel memory writes
+    
+    // SET UP PORT C
+#ifdef REV3BOARD
+    PORTSetPinsDigitalOut(IOPORT_C, BIT_1 | BIT_2 | BIT_3 | BIT_4 | BIT_13 | BIT_14 | BIT_4);
+    PORTSetBits(IOPORT_C, BIT_1 | BIT_2 | BIT_3 | BIT_4);
+#else
+    PORTSetPinsDigitalOut(IOPORT_C, BIT_3 | BIT_4);
+#endif        
+    
+    // SET UP PORT D
     PORTD = 0x0000; // Set matrix output enable high. All other outputs low.
 #ifdef REV3BOARD
     OEpin = 1;
 #else    
     OEpin = 0;
 #endif    
+    
+    // SET UP PORT E
+    PORTSetPinsDigitalOut(IOPORT_E, BIT_0 | BIT_1 | BIT_2 | BIT_3);    
+    
+    // SET UP PORT F
+    PORTSetPinsDigitalOut(IOPORT_F, BIT_2); 
+    TEST_OUT = 0;
+    
+    // SET UP PORT G
+    PORTSetPinsDigitalOut(IOPORT_G, BIT_0);        
+    
 
 #ifdef PANEL32X32    
     PORTSetPinsDigitalOut(IOPORT_D, BIT_0 | BIT_1 | BIT_2 | BIT_3); // For 32x32 matrix
 #else
-    // PORTSetPinsDigitalOut(IOPORT_D, BIT_0 | BIT_1 | BIT_2 | BIT_13); // For 16x32 matrix
     PORTSetPinsDigitalOut(IOPORT_D, BIT_0 | BIT_1 | BIT_2); // For 16x32 matrix
 #endif    
-    // Set up Timer 2/3 as a single 32 bit timer with interrupt priority of 2
-    // Use internal clock, 1:1 prescale
-    // If Postscale = 1600 interrupts occur about every 33 uS
-    // This yields a refresh rate of about 59 hz for entire display
-    // The flicker seems pretty minimal at this rate
-    // 1 / 33 us x 8 x 2^6 = 59
-    // 8 lines x 32 columns x 6 panels x 6 bit resolution = 9216 writes to PORT D for each refresh!       
-    ConfigIntTimer23(T2_INT_ON | T2_INT_PRIOR_2);
-    OpenTimer23(T23_ON | T23_SOURCE_INT | T23_PS_1_1, TIMER_ROLLOVER);
 
-    PORTSetPinsDigitalOut(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_12 | BIT_15);    
-    PORTSetBits(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_12);
-    PORTClearBits(IOPORT_B, BIT_12);  // RS485 control set to disable TX
-    XBEE_SLEEP_OFF;
-
-    // Set up Port C outputs:
-#ifdef REV3BOARD
-    // RtccShutdown();
-    PORTSetPinsDigitalOut(IOPORT_C, BIT_3 | BIT_13 | BIT_14 | BIT_4);
-#else
-    PORTSetPinsDigitalOut(IOPORT_C, BIT_3 | BIT_4);
-#endif
-    // Set up Port G outputs:
-    PORTSetPinsDigitalOut(IOPORT_G, BIT_0);
-    RS485_CTRL = 0;
-
+    
 #ifdef REV3BOARD
     LATC = LATCH_LOW;
 #else    
     PORTA = LATCH_LOW;
 #endif    
+    
     
     // CONFIGURE DMA CHANNEL 0 FOR UART 5 INTERRUPT ON MATCH    
     ClearRxBuffer();
@@ -783,17 +896,32 @@ void UserInit(void) {
     // Configure HOST UART Interrupts
     INTEnable(INT_U2TX, INT_DISABLED);
     INTEnable(INT_SOURCE_UART_RX(HOSTuart), INT_ENABLED);
-    INTSetVectorPriority(INT_VECTOR_UART(HOSTuart), INT_PRIORITY_LEVEL_2);
-    // INTSetVectorSubPriority(INT_VECTOR_UART(HOSTuart), INT_SUB_PRIORITY_LEVEL_0);        
+    INTSetVectorPriority(INT_VECTOR_UART(HOSTuart), INT_PRIORITY_LEVEL_2);      
+    
+    // Set up Timer 1 for 1 kHz interrupts:
+    ConfigIntTimer1(T1_INT_ON | T1_INT_PRIOR_2);
+    OpenTimer1(T1_ON | T1_SOURCE_INT | T1_PS_1_64, 1250);    
+    
+    // Set up Timer 2/3 as a single 32 bit timer with interrupt priority of 2
+    // Use internal clock, 1:1 prescale
+    // If Postscale = 1600 interrupts occur about every 33 uS
+    // This yields a refresh rate of about 59 hz for entire display
+    // The flicker seems pretty minimal at this rate
+    // 1 / 33 us x 8 x 2^6 = 59
+    // 8 lines x 32 columns x 6 panels x 6 bit resolution = 9216 writes to PORT D for each refresh!       
+    ConfigIntTimer23(T2_INT_ON | T2_INT_PRIOR_2);
+    OpenTimer23(T23_ON | T23_SOURCE_INT | T23_PS_1_1, TIMER_ROLLOVER);
+    
+    RS485_CTRL = 0;
+    ATMEL_CS1 = 1;
+    ATMEL_CS2 = 1;
+    ATMEL_CS3 = 1;
+    ATMEL_CS4 = 1;
 
     // Turn on the interrupts
-    INTEnableSystemMultiVectoredInt();
+    // INTEnableSystemMultiVectoredInt();
     
-    
-    PORTSetPinsDigitalOut(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_12 | BIT_15);    
-    PORTSetBits(IOPORT_B, BIT_0 | BIT_1 | BIT_2 | BIT_12);
-
-
+    // ConfigAd();
 }//end UserInit
 
 
@@ -811,6 +939,7 @@ unsigned short processPanelData(unsigned char *ptrData, unsigned short dataLengt
     if ((subCommand & 0xF0) != BOARD_ID) return (0);     
     
     panelNumber = subCommand & 0x07;    
+    printf("\r>>Panel: #%d", panelNumber);
     
     lowByte = ptrData[2];
     highByte = ptrData[3];
@@ -819,40 +948,43 @@ unsigned short processPanelData(unsigned char *ptrData, unsigned short dataLengt
     if (lengthCheck != (dataLength - 4))
         return (UART_LENGTH_ERROR);
 
-    if (panelNumber >= NUMPANELS) return (UART_COMMAND_ERROR);    
+    // if (panelNumber >= NUMPANELS) return (UART_COMMAND_ERROR);    
     
 #ifdef PANEL32X32    
     i = 4;
     if (panelNumber == 0)
     {     
-        panelNumber = 3;
         for (row = (0); row < (PANELROWS/2); row++)
             for (column = 0; column < PANELCOLS; column++)          
                 panelData[panelNumber][row][column] = colorWheel[ptrData[i++]];               
+        updateOutputPanel(panelNumber);
     }        
     else if (panelNumber == 1) 
     {
-        panelNumber = 3;
+        panelNumber = 0;
         for (row = (PANELROWS/2); row < (PANELROWS); row++)
             for (column = 0; column < PANELCOLS; column++)          
                 panelData[panelNumber][row][column] = colorWheel[ptrData[i++]];            
-    }        
+        updateOutputPanel(panelNumber);
+    }            
     else if (panelNumber == 2)
     {     
-        panelNumber = 2;
+        panelNumber = 1;
         for (row = 0; row < (PANELROWS/2); row++)
             for (column = 0; column < PANELCOLS; column++)          
                 panelData[panelNumber][row][column] = colorWheel[ptrData[i++]];    
+        updateOutputPanel(panelNumber);
     }    
     else if (panelNumber == 3)
     {
-        panelNumber = 2;
+        panelNumber = 1;
         for (row = PANELROWS/2; row < PANELROWS; row++)
             for (column = 0; column < PANELCOLS; column++)          
                 panelData[panelNumber][row][column] = colorWheel[ptrData[i++]];            
-    }           
-    updateOutputPanel(panelNumber);
+        updateOutputPanel(panelNumber);
+    }        
 #else     
+    if (panelNumber >= NUMPANELS) return (UART_COMMAND_ERROR);
     i = 4;
     for (row = 0; row < PANELROWS; row++)
         for (column = 0; column < PANELCOLS; column++)          
@@ -875,9 +1007,17 @@ unsigned char updateOutputPanel(unsigned char panelNumber)
     if ((panelNumber % 2) == 0) evenFlag = TRUE;
     else evenFlag = FALSE;
 
-    offset = (PANELS_ACROSS - 1) * PANELCOLS;
-    outDataIndex = (panelNumber / 2) * PANELCOLS;
-
+    //offset = (PANELS_ACROSS - 1) * PANELCOLS;
+    //outDataIndex = (panelNumber / 2) * PANELCOLS;
+#ifdef PANEL32X32
+    offset = 0;
+    outDataIndex = 0;
+#else
+    offset = PANELCOLS;
+    if (panelNumber == 0 || panelNumber == 1) outDataIndex = 0;
+    else outDataIndex = PANELCOLS;
+#endif
+    
     for (line = 0; line < MAXLINE; line++) 
     {
         REDmask = RED_LSB;
@@ -933,4 +1073,192 @@ unsigned char updateOutputPanel(unsigned char panelNumber)
         }
     }
 }
+
+
+#ifdef PANEL32X32
+unsigned char updateOutputMatrix() 
+{
+    unsigned short line, col;
+    unsigned char PWMbit;
+    unsigned short outDataIndex; 
+    unsigned short outputData;
+    unsigned long matrixData, REDmask, GREENmask, BLUEmask;
+
+    outDataIndex = 0;
+
+    for (line = 0; line < MAXLINE; line++) 
+    {
+        REDmask = RED_LSB;
+        GREENmask = GREEN_LSB;
+        BLUEmask = BLUE_LSB;
+        for (PWMbit = 0; PWMbit <= COLORDEPTH; PWMbit++) 
+        {
+            for (col = 0; col < (MATRIX_WIDTH/2); col++) 
+            {
+                if (PWMbit < COLORDEPTH)
+                {
+                    outputData = 0x0000;
+                    matrixData = matrix[line][col];                    
+                    
+                    if (REDmask & matrixData) outputData |= R1bit;
+                    if (GREENmask & matrixData) outputData |= G1bit;
+                    if (BLUEmask & matrixData) outputData |= B1bit;
+
+                    matrixData = matrix[line + MAXLINE][col];
+
+                    if (REDmask & matrixData) outputData |= R2bit;
+                    if (GREENmask & matrixData) outputData |= G2bit;
+                    if (BLUEmask & matrixData) outputData |= B2bit;
+
+                    matrixData = matrix[line][col+(MATRIX_WIDTH/2)];
+                    
+                    if (REDmask & matrixData) outputData |= M2R1bit;
+                    if (GREENmask & matrixData) outputData |= M2G1bit;
+                    if (BLUEmask & matrixData) outputData |= M2B1bit;
+                    
+                    matrixData = matrix[line + MAXLINE][col+(MATRIX_WIDTH/2)];                    
+
+                    if (REDmask & matrixData) outputData |= M2R2bit;
+                    if (GREENmask & matrixData) outputData |= M2G2bit;
+                    if (BLUEmask & matrixData) outputData |= M2B2bit;
+ 
+
+                    matrixOutData[outDataIndex] = outputData;
+                    
+                }
+                outDataIndex++;
+            }
+            REDmask = REDmask << 1;
+            GREENmask = GREENmask << 1;
+            BLUEmask = BLUEmask << 1;
+        }
+    }
+}
+#else
+unsigned char updateOutputMatrix() 
+{
+    unsigned short line, col;
+    unsigned char PWMbit;
+    unsigned short outDataIndex; 
+    unsigned short outputData;
+    unsigned long matrixData, REDmask, GREENmask, BLUEmask;
+
+    outDataIndex = 0;
+
+    for (line = 0; line < MAXLINE; line++) 
+    {
+        REDmask = RED_LSB;
+        GREENmask = GREEN_LSB;
+        BLUEmask = BLUE_LSB;
+        for (PWMbit = 0; PWMbit <= COLORDEPTH; PWMbit++) 
+        {
+            for (col = 0; col < MAXCOL; col++) 
+            {
+                if (PWMbit < COLORDEPTH)
+                {
+                    outputData = 0x0000;
+                    matrixData = matrix[line][col];                    
+                    
+                    if (REDmask & matrixData) outputData |= R1bit;
+                    if (GREENmask & matrixData) outputData |= G1bit;
+                    if (BLUEmask & matrixData) outputData |= B1bit;
+
+                    matrixData = matrix[line + MAXLINE][col];
+
+                    if (REDmask & matrixData) outputData |= R2bit;
+                    if (GREENmask & matrixData) outputData |= G2bit;
+                    if (BLUEmask & matrixData) outputData |= B2bit;
+
+                    matrixData = matrix[line + (MAXLINE*2)][col];                    
+                    
+                    if (REDmask & matrixData) outputData |= M2R1bit;
+                    if (GREENmask & matrixData) outputData |= M2G1bit;
+                    if (BLUEmask & matrixData) outputData |= M2B1bit;
+                    
+                    matrixData = matrix[line + (MAXLINE*3)][col];                    
+
+                    if (REDmask & matrixData) outputData |= M2R2bit;
+                    if (GREENmask & matrixData) outputData |= M2G2bit;
+                    if (BLUEmask & matrixData) outputData |= M2B2bit;
+
+                    matrixOutData[outDataIndex] = outputData;
+                    
+                }
+                outDataIndex++;
+            }
+            REDmask = REDmask << 1;
+            GREENmask = GREENmask << 1;
+            BLUEmask = BLUEmask << 1;
+        }
+    }
+}
+
+#endif
+
+
+void __ISR(_TIMER_23_VECTOR, ipl2) Timer23Handler(void) 
+{
+    static unsigned char line = 0;
+    static unsigned char colorPlane = 0;
+    static unsigned long Delaymultiplier = TIMER_ROLLOVER;
+    static unsigned short dataOffset = 0;
+    static unsigned char testFlag = FALSE;
+
+    mT23ClearIntFlag(); // Clear interrupt flag    
+
+    if (colorPlane == 0 || colorPlane == 2) TEST_OUT = 1;
+    else TEST_OUT = 0;
+    
+    WritePeriod23(Delaymultiplier);
+    PORTD = line;
+#ifdef REV3BOARD
+    LATC = LATCH_LOW;
+#else
+    PORTA = LATCH_LOW;
+#endif
+    DmaChnSetTxfer(DMA_CHANNEL1, &matrixOutData[dataOffset], (void*) &PMDIN, NUMWRITES * 2, 2, 2);
+    DmaChnEnable(DMA_CHANNEL1);
+    DmaChnEnable(DMA_CHANNEL2);    
+    dataOffset = dataOffset + NUMWRITES;
+    Delaymultiplier = Delaymultiplier << 1;
+    colorPlane++;
+    if (colorPlane > COLORDEPTH) 
+    {
+        colorPlane = 0;
+        Delaymultiplier = TIMER_ROLLOVER;
+        line++;
+        if (line >= MAXLINE) 
+        {
+            line = 0;
+            dataOffset = 0;
+        }
+    }
+    else if (colorPlane == COLORDEPTH)
+        Delaymultiplier = TIMER_ROLLOVER;
+}
+
+void __ISR(_TIMER_1_VECTOR, ipl2) Timer1Handler(void) 
+{
+    mT1ClearIntFlag(); // Clear interrupt flag 
+    Timer1MilliSeconds++;
+    Timer1Flag = true;    
+}
+
+void __ISR(_ADC_VECTOR, ipl6) AdcHandler(void) 
+{
+    unsigned short offSet;
+    unsigned char i;
+
+    mAD1IntEnable(INT_DISABLED);
+    mAD1ClearIntFlag();
+
+    // Determine which buffer is idle and create an offset
+    offSet = 8 * ((~ReadActiveBufferADC10() & 0x01));
+
+    for (i = 0; i < MAXPOTS; i++)
+        arrPots[i] = (unsigned char) (ReadADC10(offSet + i) / 4); // read the result of channel 0 conversion from the idle buffer
+
+}
+
+
 

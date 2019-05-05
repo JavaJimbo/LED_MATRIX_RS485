@@ -21,13 +21,9 @@
 #define MAXPACKETSIZE 1024
 #define MAX_PANEL_DATASIZE (32 * 16 * 3 * 3)
 #define NUMCHANNELS 1
-#define REV2BOARD 
-// #define REV3BOARD  // $$$$
+// #define REV2BOARD 
+#define REV3BOARD  // $$$$
 
-#define PANELS_ACROSS 2
-#define PANELS_STACKED 2 
-#define NUMPANELS (PANELS_ACROSS * PANELS_STACKED)
-#define PANEL32X32
 
 #define UART_STANDBY 0
 #define UART_INCOMING 1
@@ -43,31 +39,30 @@
 
 #define MAXDATASIZE 10000
 
+#define MATRIX_WIDTH 64
+#define MATRIX_HEIGHT 32
 
 #ifdef PANEL32X32
 #define PANELROWS 32
 #define COLORDEPTH 3 // was 5
 #define MAXLINE 16   // Equal to number of rows / 2
-#define TIMER_ROLLOVER 2000
-#define MAXCOL (PANELS_ACROSS*32)
-#define MAXROW (PANELS_STACKED*32)  
+#define TIMER_ROLLOVER 4000
+#define MAXCOL (MATRIX_WIDTH/2)
+#define MAXROW MATRIX_HEIGHT
+#define NUMPANELS 2 // (PANELS_ACROSS * PANELS_STACKED)
 #else
 #define PANELROWS 16
 #define COLORDEPTH 8
 #define MAXLINE 8
 #define TIMER_ROLLOVER 250
-#define MAXCOL (PANELS_ACROSS*32)
-#define MAXROW (PANELS_STACKED*16)
+#define MAXCOL MATRIX_WIDTH
+#define MAXROW MATRIX_HEIGHT
+#define NUMPANELS 4 
 #endif
- 
-// NUMWRITES is the number of words written to the output port 
-// per each color plane for each line on the matrix = Total columns
-#define NUMWRITES MAXCOL
 
+#define NUMWRITES MAXCOL
 #define PANELCOLS 32
 #define PANELSIZE (PANELROWS*PANELCOLS*NUMCHANNELS)
-#define COMPRESSED_SIZE (PANELROWS*PANELCOLS*2)
-#define BALANCE 48840
 #define NUMPOTS 4
 
 #define HOSTuart UART2
@@ -79,13 +74,7 @@
 
 #define RS485uart UART5
 
-#define XBEE_SLEEP PORTBbits.RB15
-
-#define XBEE_SLEEP_ON PORTSetBits(IOPORT_B, BIT_0)
-#define XBEE_SLEEP_OFF PORTClearBits(IOPORT_B, BIT_0)
-
-// #define TEST_OUT LATCbits.LATC4
-#define TEST_OUT LATBbits.LATB0
+#define TEST_OUT LATFbits.LATF2 // LATBbits.LATB0
 #define RS485_TX_OUT LATBbits.LATB12
 #define RS485_TX_ENABLE LATBbits.LATB12
 #define DisableRS485_TX() PORTClearBits(IOPORT_B, BIT_12) 
@@ -98,7 +87,6 @@
 
 #define XBEE_SLEEP PORTBbits.RB15
 
-//#define RED_LSB 0b00001000 // (0x01<<(8-COLORDEPTH))
 #define RED_LSB (0x01<<(8-COLORDEPTH))
 #define GREEN_LSB (RED_LSB << 8)
 #define BLUE_LSB  (RED_LSB << 16)
@@ -109,8 +97,6 @@
 #ifdef REV3BOARD
 #define LATCH_LOW 0x0000
 #define LATCH_HIGH 0x6000
-//#define LATCH_LOW 0x2000
-//#define LATCH_HIGH 0x6000
 #define OE_OFF() PORTClearBits(IOPORT_C, BIT_13)
 #define OE_ON() PORTCSetBits(IOPORT_C, BIT_13)
 #endif
@@ -119,12 +105,6 @@
 #define LATCH_LOW 0x80  // OE=1, LATCH=0
 #define LATCH_HIGH 0x40  // OE=0, LATCH=1
 #endif
-
-//#define LATCH_LOW 0xC0  // 0x40
-//#define LATCH_HIGH 0x80  
-//#endif
-
-// PIN DEFINITIONS FOR REV 2 LED MATRIX CONTROLLER
 
 
 #ifdef REV3BOARD
@@ -162,45 +142,32 @@
 #define ODD_MASK  ~(M2R1bit | M2B1bit | M2G1bit | M2R2bit | M2B2bit | M2G2bit)
 
 
-#define CLKOUT  0x0010  // PORTDbits.RD4
-// #define OE_ENB  0xFFDF  // PORTDbits.RD5
-// #define LATCH   0x0040  // PORTDbits.RD6
-
-
-
-
-//#define DARKEN //& 0x7F7F7F
-
-
-#define MAGENTA 0x1000FF
-#define PURPLE 0x7F0070
-#define CYAN 0x705000
-#define LIME 0x00FF40
-#define YELLOW 0x0070FE
-#define ORANGE 0x0020FF
-#define RED 0x0000FF
-#define GREEN 0x00FF00
-#define BLUE 0xFF0000
+#define MAGENTA 0x10007F
+#define PURPLE 0x7F0050
+#define CYAN 0x405000
+#define LIME 0x007F40
+#define YELLOW 0x00607F
+#define ORANGE 0x00207F
+#define RED 0x00007F
+#define GREEN 0x007F00
+#define BLUE 0x7F0000
 #define PINK 0x10207F
-#define LAVENDER 0xF00030
-#define TURQUOISE 0x70FF00
-#define WHITE 0xFFFFFF // was 808080
+#define LAVENDER 0x400030
+#define TURQUOISE 0x307F00
+#define WHITE 0x7F7F7F // was 808080
 #define GRAY 0x505050
 #define DARKGRAY 0x202020
 #define BLACK 0
 
+
 #define MAXCOLOR 16
+
 
 #define MAXRANDOM (RAND_MAX+1)
 #define true	TRUE
 #define false 	FALSE
 
-#define RS485_CTRL PORTGbits.RG0
-
-// Pin defs for UBW32:
-#define CLKOUT  0x0010  // PORTDbits.RD4
-// #define OE_ENB  0xFFDF  // PORTDbits.RD5
-//#define LATCH   0x0040  // PORTDbits.RD6
+#define RS485_CTRL LATBbits.LATB12
 
 #ifdef REV3BOARD
 #define OEpin   LATCbits.LATC13

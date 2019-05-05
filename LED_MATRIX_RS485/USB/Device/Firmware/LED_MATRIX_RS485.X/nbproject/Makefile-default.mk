@@ -57,17 +57,17 @@ OBJECTDIR=build/${CND_CONF}/${IMAGE_TYPE}
 DISTDIR=dist/${CND_CONF}/${IMAGE_TYPE}
 
 # Source Files Quoted if spaced
-SOURCEFILES_QUOTED_IF_SPACED=../../../../main.c "../../../../CRC Byte Check.c" ../../../../DelayPIC32.c
+SOURCEFILES_QUOTED_IF_SPACED=../../../../main.c "../../../../CRC Byte Check.c" ../../../../DelayPIC32.c ../../../../AT45DB641.c
 
 # Object Files Quoted if spaced
-OBJECTFILES_QUOTED_IF_SPACED=${OBJECTDIR}/_ext/1568745167/main.o "${OBJECTDIR}/_ext/1568745167/CRC Byte Check.o" ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o
-POSSIBLE_DEPFILES=${OBJECTDIR}/_ext/1568745167/main.o.d "${OBJECTDIR}/_ext/1568745167/CRC Byte Check.o.d" ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d
+OBJECTFILES_QUOTED_IF_SPACED=${OBJECTDIR}/_ext/1568745167/main.o "${OBJECTDIR}/_ext/1568745167/CRC Byte Check.o" ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o ${OBJECTDIR}/_ext/1568745167/AT45DB641.o
+POSSIBLE_DEPFILES=${OBJECTDIR}/_ext/1568745167/main.o.d "${OBJECTDIR}/_ext/1568745167/CRC Byte Check.o.d" ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d ${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d
 
 # Object Files
-OBJECTFILES=${OBJECTDIR}/_ext/1568745167/main.o ${OBJECTDIR}/_ext/1568745167/CRC\ Byte\ Check.o ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o
+OBJECTFILES=${OBJECTDIR}/_ext/1568745167/main.o ${OBJECTDIR}/_ext/1568745167/CRC\ Byte\ Check.o ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o ${OBJECTDIR}/_ext/1568745167/AT45DB641.o
 
 # Source Files
-SOURCEFILES=../../../../main.c ../../../../CRC Byte Check.c ../../../../DelayPIC32.c
+SOURCEFILES=../../../../main.c ../../../../CRC Byte Check.c ../../../../DelayPIC32.c ../../../../AT45DB641.c
 
 
 CFLAGS=
@@ -124,6 +124,12 @@ ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o: ../../../../DelayPIC32.c  nbproject/M
 	@${RM} ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o 
 	@${FIXDEPS} "${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d" $(SILENT) -rsi ${MP_CC_DIR}../  -c ${MP_CC}  $(MP_EXTRA_CC_PRE) -g -D__DEBUG -D__MPLAB_DEBUGGER_ICD3=1  -fframe-base-loclist  -x c -c -mprocessor=$(MP_PROCESSOR_OPTION)  -Os -DPIC32MX795F512L_PIM -I".." -I"../../../../Microchip/Include" -I"../../../../Microchip/Include/USB" -I"../../../../Microchip/USB" -I"." -MMD -MF "${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d" -o ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o ../../../../DelayPIC32.c    -DXPRJ_default=$(CND_CONF)    $(COMPARISON_BUILD) 
 	
+${OBJECTDIR}/_ext/1568745167/AT45DB641.o: ../../../../AT45DB641.c  nbproject/Makefile-${CND_CONF}.mk
+	@${MKDIR} "${OBJECTDIR}/_ext/1568745167" 
+	@${RM} ${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d 
+	@${RM} ${OBJECTDIR}/_ext/1568745167/AT45DB641.o 
+	@${FIXDEPS} "${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d" $(SILENT) -rsi ${MP_CC_DIR}../  -c ${MP_CC}  $(MP_EXTRA_CC_PRE) -g -D__DEBUG -D__MPLAB_DEBUGGER_ICD3=1  -fframe-base-loclist  -x c -c -mprocessor=$(MP_PROCESSOR_OPTION)  -Os -DPIC32MX795F512L_PIM -I".." -I"../../../../Microchip/Include" -I"../../../../Microchip/Include/USB" -I"../../../../Microchip/USB" -I"." -MMD -MF "${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d" -o ${OBJECTDIR}/_ext/1568745167/AT45DB641.o ../../../../AT45DB641.c    -DXPRJ_default=$(CND_CONF)    $(COMPARISON_BUILD) 
+	
 else
 ${OBJECTDIR}/_ext/1568745167/main.o: ../../../../main.c  nbproject/Makefile-${CND_CONF}.mk
 	@${MKDIR} "${OBJECTDIR}/_ext/1568745167" 
@@ -142,6 +148,12 @@ ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o: ../../../../DelayPIC32.c  nbproject/M
 	@${RM} ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d 
 	@${RM} ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o 
 	@${FIXDEPS} "${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d" $(SILENT) -rsi ${MP_CC_DIR}../  -c ${MP_CC}  $(MP_EXTRA_CC_PRE)  -g -x c -c -mprocessor=$(MP_PROCESSOR_OPTION)  -Os -DPIC32MX795F512L_PIM -I".." -I"../../../../Microchip/Include" -I"../../../../Microchip/Include/USB" -I"../../../../Microchip/USB" -I"." -MMD -MF "${OBJECTDIR}/_ext/1568745167/DelayPIC32.o.d" -o ${OBJECTDIR}/_ext/1568745167/DelayPIC32.o ../../../../DelayPIC32.c    -DXPRJ_default=$(CND_CONF)    $(COMPARISON_BUILD) 
+	
+${OBJECTDIR}/_ext/1568745167/AT45DB641.o: ../../../../AT45DB641.c  nbproject/Makefile-${CND_CONF}.mk
+	@${MKDIR} "${OBJECTDIR}/_ext/1568745167" 
+	@${RM} ${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d 
+	@${RM} ${OBJECTDIR}/_ext/1568745167/AT45DB641.o 
+	@${FIXDEPS} "${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d" $(SILENT) -rsi ${MP_CC_DIR}../  -c ${MP_CC}  $(MP_EXTRA_CC_PRE)  -g -x c -c -mprocessor=$(MP_PROCESSOR_OPTION)  -Os -DPIC32MX795F512L_PIM -I".." -I"../../../../Microchip/Include" -I"../../../../Microchip/Include/USB" -I"../../../../Microchip/USB" -I"." -MMD -MF "${OBJECTDIR}/_ext/1568745167/AT45DB641.o.d" -o ${OBJECTDIR}/_ext/1568745167/AT45DB641.o ../../../../AT45DB641.c    -DXPRJ_default=$(CND_CONF)    $(COMPARISON_BUILD) 
 	
 endif
 
